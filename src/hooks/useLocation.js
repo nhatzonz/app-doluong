@@ -32,7 +32,7 @@ export function useLocation(isActive) {
           setLocation({
             lat: loc.coords.latitude,
             lon: loc.coords.longitude,
-            speed: loc.coords.speed,
+            speed: Math.max(0, loc.coords.speed || 0),
             altitude: loc.coords.altitude,
             timestamp: loc.timestamp,
           });

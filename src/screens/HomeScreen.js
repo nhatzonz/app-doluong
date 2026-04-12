@@ -5,6 +5,7 @@ import {
 import { useMeasurement } from '../hooks/useMeasurement';
 import { SensorDataCard } from '../components/SensorDataCard';
 import { ComfortBadge } from '../components/ComfortBadge';
+import { calculateDynamicResultant } from '../services/wrmsCalculator';
 import { COLORS } from '../utils/colors';
 
 export default function HomeScreen() {
@@ -27,13 +28,13 @@ export default function HomeScreen() {
   const minutes = Math.floor(elapsed / 60);
   const seconds = elapsed % 60;
 
-  const resultant = Math.sqrt(
-    currentAccel.x ** 2 + currentAccel.y ** 2 + currentAccel.z ** 2
+  const resultant = calculateDynamicResultant(
+    currentAccel.x, currentAccel.y, currentAccel.z
   );
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.header}>Do Luong Mat Duong</Text>
+      <Text style={[styles.header, {marginTop:46}]}>Do Luong Mat Duong</Text>
 
       {/* Nut START / STOP */}
       <TouchableOpacity
@@ -73,7 +74,7 @@ export default function HomeScreen() {
           { label: 'aX', value: currentAccel.x.toFixed(3) },
           { label: 'aY', value: currentAccel.y.toFixed(3) },
           { label: 'aZ', value: currentAccel.z.toFixed(3) },
-          { label: '|a|', value: resultant.toFixed(3) },
+          { label: 'Dong', value: resultant.toFixed(3) },
         ]}
       />
 
@@ -83,7 +84,7 @@ export default function HomeScreen() {
         items={[
           { label: 'Lat', value: currentLocation?.lat?.toFixed(6) || '--' },
           { label: 'Lon', value: currentLocation?.lon?.toFixed(6) || '--' },
-          { label: 'km/h', value: currentLocation?.speed ? (currentLocation.speed * 3.6).toFixed(1) : '--' },
+          { label: 'km/h', value: currentLocation?.speed != null ? (Math.max(0, currentLocation.speed) * 3.6).toFixed(1) : '--' },
           { label: 'Alt(m)', value: currentLocation?.altitude?.toFixed(1) || '--' },
         ]}
       />

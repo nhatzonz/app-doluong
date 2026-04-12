@@ -3,7 +3,7 @@ import { useMeasurementContext } from '../context/MeasurementContext';
 import { useAccelerometer } from './useAccelerometer';
 import { useLocation } from './useLocation';
 import { analyzeSegment } from '../services/api';
-import { calculateSegmentWRMS } from '../services/wrmsCalculator';
+import { calculateSegmentWRMS, calculateDynamicResultant } from '../services/wrmsCalculator';
 import { classifyComfort, getComfortColor } from '../utils/comfortClassifier';
 import { SEGMENT_SIZE } from '../utils/constants';
 
@@ -50,9 +50,8 @@ export function useMeasurement() {
     if (bufferRef.current.length % 10 === 0) {
       dispatchRef.current({ type: 'UPDATE_ACCEL', payload: accelData });
 
-      const resultant = Math.sqrt(
-        accelData.x ** 2 + accelData.y ** 2 + accelData.z ** 2
-      );
+      // Gia toc dong (da tru trong luc) de hien thi dung tren bieu do
+      const resultant = calculateDynamicResultant(accelData.x, accelData.y, accelData.z);
       dispatchRef.current({
         type: 'ADD_ACCEL_HISTORY',
         payload: { value: resultant, timestamp: now },

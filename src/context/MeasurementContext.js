@@ -34,7 +34,7 @@ function reducer(state, action) {
       return {
         ...state,
         currentAccel: action.payload,
-        sampleCount: state.sampleCount + 1,
+        sampleCount: state.sampleCount + 10, // dispatch moi 10 mau
       };
     case 'ADD_TO_BUFFER':
       return {
@@ -50,7 +50,7 @@ function reducer(state, action) {
         locationHistory: [...state.locationHistory, action.payload],
         speedHistory: [
           ...state.speedHistory.slice(-300),
-          { value: (action.payload.speed || 0) * 3.6, timestamp: Date.now() },
+          { value: Math.max(0, (action.payload.speed || 0)) * 3.6, timestamp: Date.now() },
         ],
         altitudeHistory: [
           ...state.altitudeHistory.slice(-300),

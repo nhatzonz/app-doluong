@@ -60,7 +60,7 @@ export default function ResultScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.header}>Ket Qua Do Luong</Text>
+      <Text style={[styles.header, {marginTop:46}]}>Ket Qua Do Luong</Text>
 
       {/* Tong quan */}
       <View style={[styles.summaryCard, { backgroundColor: overallColor }]}>

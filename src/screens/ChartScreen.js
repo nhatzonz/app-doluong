@@ -9,7 +9,7 @@ const MAX_POINTS = 60;
 
 function ChartCard({ title, data, unit, color, referenceLine }) {
   const displayData = data.slice(-MAX_POINTS).map(d => ({
-    value: d.value || 0,
+    value: Number.isFinite(d.value) ? d.value : 0,
   }));
 
   if (displayData.length === 0) {
@@ -48,7 +48,7 @@ export default function ChartScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.header}>Bieu Do Realtime</Text>
+      <Text style={[styles.header, {marginTop:46}]}>Bieu Do Realtime</Text>
 
       <ChartCard
         title="Toc do"
