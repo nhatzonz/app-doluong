@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import Papa from 'papaparse';
 
@@ -13,13 +13,16 @@ export async function exportCSV(segmentResults) {
   }));
 
   const csv = Papa.unparse(data);
-  const fileUri = FileSystem.documentDirectory + 'road_roughness.csv';
-
-  await FileSystem.writeAsStringAsync(fileUri, csv);
+  const file = new File(Paths.document, 'road_roughness.csv');
+  if (file.exists) {
+    file.delete();
+  }
+  file.create();
+  file.write(csv);
 
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(fileUri);
+    await Sharing.shareAsync(file.uri);
   }
 
-  return fileUri;
+  return file.uri;
 }
