@@ -1,12 +1,18 @@
 // Tinh WRMS phia client (offline fallback, khong co Butterworth filter)
-// Expo Accelerometer tra ve m/s² (bao gom trong luc tren truc Z)
+// expo-sensors Accelerometer tra ve don vi g (phone dung yen: |a| ≈ 1.0g).
+// Don vi output: m/s².
+//
+// Orientation-independent: magnitude - G thay cho (az - G),
+// de phone co the nam bat ky huong nao (up/nghieng/dung). Khi yen:
+// sqrt(ax²+ay²+az²) ≈ 1g → |mag - G| ≈ 0. Khi rung:
+// |mag - G| xap xi phan dong cua gia toc (bo qua thanh phan vuong goc
+// rat nho do quay).
 
-// Tinh gia toc dong: tru trong luc TRUOC khi tinh tong hop
-// Dung: sqrt(ax² + ay² + (az - 9.81)²)
-// Sai:  sqrt(ax² + ay² + az²) - 9.81
+export const G = 9.80665;
+
 export function calculateDynamicResultant(ax, ay, az) {
-  const dynZ = az - 9.81;
-  return Math.sqrt(ax * ax + ay * ay + dynZ * dynZ);
+  const mag = Math.sqrt(ax * ax + ay * ay + az * az) * G;
+  return Math.abs(mag - G);
 }
 
 export function calculateWRMS(samples) {
@@ -15,7 +21,7 @@ export function calculateWRMS(samples) {
   return Math.sqrt(sumSquares / samples.length);
 }
 
-// Tinh WRMS tu mang accelerometer samples [{x, y, z}, ...]
+// Tinh WRMS tu mang accelerometer samples [{x, y, z}, ...] (input: g)
 export function calculateSegmentWRMS(accelSamples) {
   const dynamicAccels = accelSamples.map(s =>
     calculateDynamicResultant(s.x, s.y, s.z)

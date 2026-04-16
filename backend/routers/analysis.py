@@ -4,7 +4,7 @@ from ..models.schemas import (
     SegmentRequest, SegmentResponse,
     FullTripRequest, FullAnalysisResponse,
 )
-from ..services.wrms_calculator import calculate_wrms_from_xyz
+from ..services.wrms_calculator import calculate_wrms_from_xyz, estimate_fs
 from ..services.comfort_classifier import classify, get_color
 from ..services.ml_model import train_and_predict
 
@@ -17,8 +17,10 @@ async def analyze_segment(data: SegmentRequest):
     ax = [s.ax for s in data.samples]
     ay = [s.ay for s in data.samples]
     az = [s.az for s in data.samples]
+    ts = [s.timestamp for s in data.samples]
 
-    wrms = calculate_wrms_from_xyz(ax, ay, az)
+    fs = estimate_fs(ts)
+    wrms = calculate_wrms_from_xyz(ax, ay, az, fs=fs)
     comfort = classify(wrms)
     color = get_color(wrms)
 
