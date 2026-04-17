@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import MapView, { Polyline, Circle } from 'react-native-maps';
+import MapView, { Polyline, Marker } from 'react-native-maps';
 import { useMeasurementContext } from '../context/MeasurementContext';
 import { COLORS, SHADOW, comfortSoloColor } from '../utils/colors';
 
@@ -45,14 +45,14 @@ export default function MapScreen() {
           if (!seg.lat || !seg.lon) return null;
           const color = seg.color || comfortSoloColor(seg.wrms);
           return (
-            <Circle
+            <Marker
               key={i}
-              center={{ latitude: seg.lat, longitude: seg.lon }}
-              radius={10}
-              fillColor={color}
-              strokeColor="#FFFFFF"
-              strokeWidth={2}
-            />
+              coordinate={{ latitude: seg.lat, longitude: seg.lon }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={[styles.segDot, { backgroundColor: color }]} />
+            </Marker>
           );
         })}
       </MapView>
@@ -201,6 +201,13 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     marginBottom: 4,
+  },
+  segDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   legendText: {
     fontSize: 13,
