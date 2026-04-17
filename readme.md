@@ -53,7 +53,7 @@ Tim IP laptop:
 
 ```bash
 # Mac
-ipconfig getifaddr en0
+ifconfig # Ip chính là chuỗi định dạng 192.168.x.x tại en1 của wifi
 
 # Windows
 ipconfig

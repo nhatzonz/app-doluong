@@ -1,5 +1,5 @@
 // Thay doi IP nay thanh IP laptop cua ban (cung WiFi voi dien thoai)
-export const API_BASE_URL = 'http://192.168.1.61:8000';
+export const API_BASE_URL = 'http://192.168.1.42:8000';
 
 export const SAMPLE_RATE = 50;        // Hz (khop voi fs=50 trong code mau)
 export const SEGMENT_DURATION = 2;    // giay
