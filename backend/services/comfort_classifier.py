@@ -15,10 +15,16 @@ def classify(wrms):
 
 
 def get_color(wrms):
-    """Tra ve mau theo muc do gho"""
-    if wrms < 0.63:
-        return "#4CAF50"   # Xanh
+    """6 muc mau ISO-2631, dong bo voi FE comfortGradient."""
+    if wrms < 0.315:
+        return "#10B981"   # Comfortable — green
+    elif wrms < 0.63:
+        return "#65A30D"   # Some discomfort — lime
+    elif wrms < 1.0:
+        return "#F59E0B"   # Quite uncomfortable — amber
     elif wrms < 1.6:
-        return "#FF9800"   # Cam
+        return "#F97316"   # Uncomfortable — orange
+    elif wrms < 2.5:
+        return "#EF4444"   # Very uncomfortable — red
     else:
-        return "#F44336"   # Do
+        return "#991B1B"   # Extremely uncomfortable — deep red

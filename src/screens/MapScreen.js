@@ -81,25 +81,26 @@ export default function MapScreen() {
         </View>
       </View>
 
-      {/* Bottom floating legend */}
+      {/* Bottom floating legend — 6 muc ISO-2631 */}
       <View style={styles.legend}>
-        <Text style={styles.legendTitle}>COMFORT SCALE</Text>
-        <View style={styles.legendRow}>
-          <View style={styles.legendItem}>
-            <View style={[styles.dot, { backgroundColor: '#10B981' }]} />
-            <Text style={styles.legendText}>Tốt</Text>
-            <Text style={styles.legendHint}>{'<'} 0.63</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.dot, { backgroundColor: '#F59E0B' }]} />
-            <Text style={styles.legendText}>TB</Text>
-            <Text style={styles.legendHint}>0.63 – 1.6</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.dot, { backgroundColor: '#EF4444' }]} />
-            <Text style={styles.legendText}>Xấu</Text>
-            <Text style={styles.legendHint}>{'>'} 1.6</Text>
-          </View>
+        <Text style={styles.legendTitle}>COMFORT SCALE (ISO-2631)</Text>
+        <View style={styles.legendGrid}>
+          {[
+            { color: '#10B981', label: 'Comfortable',        hint: '< 0.315' },
+            { color: '#65A30D', label: 'Some discomfort',    hint: '0.315 – 0.63' },
+            { color: '#F59E0B', label: 'Quite uncomfortable',hint: '0.63 – 1.0' },
+            { color: '#F97316', label: 'Uncomfortable',      hint: '1.0 – 1.6' },
+            { color: '#EF4444', label: 'Very uncomfortable', hint: '1.6 – 2.5' },
+            { color: '#991B1B', label: 'Extremely',          hint: '> 2.5' },
+          ].map((m) => (
+            <View key={m.label} style={styles.legendCell}>
+              <View style={[styles.dot, { backgroundColor: m.color }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.legendText} numberOfLines={1}>{m.label}</Text>
+                <Text style={styles.legendHint}>{m.hint}</Text>
+              </View>
+            </View>
+          ))}
         </View>
       </View>
     </View>
@@ -188,19 +189,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginBottom: 8,
   },
-  legendRow: {
+  legendGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
   },
-  legendItem: {
-    flex: 1,
-    alignItems: 'flex-start',
+  legendCell: {
+    width: '50%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+    paddingRight: 6,
   },
   dot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    marginBottom: 4,
   },
   segDot: {
     width: 14,
@@ -210,7 +214,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   legendText: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.text,
     fontWeight: '700',
   },
@@ -219,5 +223,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 1,
     fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
 });
