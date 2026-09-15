@@ -2,16 +2,11 @@
   "expo": {
     "name": "Do Luong Mat Duong",
     "slug": "app-doluong",
+    "scheme": "doluong",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "plugins": [
       [
         "expo-location",
@@ -19,7 +14,20 @@
           "locationAlwaysAndWhenInUsePermission": "App can vi tri de do luong mat duong."
         }
       ],
-      ["expo-sensors"]
+      [
+        "expo-sensors"
+      ],
+      "expo-sharing",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-localization"
     ],
     "ios": {
       "supportsTablet": true,
@@ -32,7 +40,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"

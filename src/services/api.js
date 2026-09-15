@@ -34,3 +34,20 @@ export async function checkHealth() {
   const response = await client.get('/health');
   return response.data;
 }
+
+// Dia chi may chu nhap tu man Cai dat. Mac dinh van la API_BASE_URL.
+export function setApiBaseUrl(url) {
+  if (!url || client.defaults.baseURL === url) return;
+  client.defaults.baseURL = url;
+  log('API', `baseURL = ${url}`);
+}
+
+export function getApiBaseUrl() {
+  return client.defaults.baseURL;
+}
+
+// Kiem tra 1 dia chi bat ky (chua luu) — dung cho nut "Kiem tra ket noi".
+export async function checkHealthAt(url, timeout = 3000) {
+  const response = await axios.get(`${url.replace(/\/+$/, '')}/health`, { timeout });
+  return response.data;
+}

@@ -3,9 +3,22 @@ import { View, Text, StyleSheet } from 'react-native';
 import MapView, { Polyline, Marker } from 'react-native-maps';
 import { useMeasurementContext } from '../context/MeasurementContext';
 import { COLORS, SHADOW, comfortSoloColor } from '../utils/colors';
+import { energyAverageWRMS } from '../services/wrmsCalculator';
+import { useT } from '../i18n';
+import { COMFORT_CODES } from '../features/analytics/tripMath';
+
+const LEGEND = [
+  { color: '#10B981', hint: '< 0.315' },
+  { color: '#65A30D', hint: '0.315 – 0.63' },
+  { color: '#F59E0B', hint: '0.63 – 1.0' },
+  { color: '#F97316', hint: '1.0 – 1.6' },
+  { color: '#EF4444', hint: '1.6 – 2.5' },
+  { color: '#991B1B', hint: '> 2.5' },
+];
 
 export default function MapScreen() {
   const { state } = useMeasurementContext();
+  const { t, comfortLabel } = useT();
   const { locationHistory, segmentResults, isRecording } = state;
 
   const routeCoords = locationHistory
@@ -18,9 +31,7 @@ export default function MapScreen() {
 
   const totalPts = routeCoords.length;
   const totalSegs = segmentResults.length;
-  const avg = totalSegs > 0
-    ? (segmentResults.reduce((s, r) => s + r.wrms, 0) / totalSegs)
-    : 0;
+  const avg = energyAverageWRMS(segmentResults);
 
   return (
     <View style={styles.container}>
@@ -60,43 +71,36 @@ export default function MapScreen() {
       {/* Top floating status */}
       <View style={styles.topBar} pointerEvents="none">
         <View style={styles.headerBlock}>
-          <Text style={styles.eyebrow}>ROUTE MAP</Text>
+          <Text style={styles.eyebrow}>{t('map.eyebrow')}</Text>
           <Text style={styles.title}>
-            {isRecording ? 'Đang ghi tuyến' : 'Tuyến đường đã đo'}
+            {isRecording ? t('map.recording') : t('map.recorded')}
           </Text>
         </View>
         <View style={styles.kpiRow}>
           <View style={styles.kpiCard}>
             <Text style={styles.kpiValue}>{totalPts}</Text>
-            <Text style={styles.kpiLabel}>POINTS</Text>
+            <Text style={styles.kpiLabel}>{t('map.points')}</Text>
           </View>
           <View style={styles.kpiCard}>
             <Text style={styles.kpiValue}>{totalSegs}</Text>
-            <Text style={styles.kpiLabel}>SEGMENTS</Text>
+            <Text style={styles.kpiLabel}>{t('map.segments')}</Text>
           </View>
           <View style={styles.kpiCard}>
             <Text style={styles.kpiValue}>{avg.toFixed(2)}</Text>
-            <Text style={styles.kpiLabel}>AVG WRMS</Text>
+            <Text style={styles.kpiLabel}>{t('map.avg')}</Text>
           </View>
         </View>
       </View>
 
       {/* Bottom floating legend — 6 muc ISO-2631 */}
       <View style={styles.legend}>
-        <Text style={styles.legendTitle}>COMFORT SCALE (ISO-2631)</Text>
+        <Text style={styles.legendTitle}>{t('map.legend')}</Text>
         <View style={styles.legendGrid}>
-          {[
-            { color: '#10B981', label: 'Comfortable',        hint: '< 0.315' },
-            { color: '#65A30D', label: 'Some discomfort',    hint: '0.315 – 0.63' },
-            { color: '#F59E0B', label: 'Quite uncomfortable',hint: '0.63 – 1.0' },
-            { color: '#F97316', label: 'Uncomfortable',      hint: '1.0 – 1.6' },
-            { color: '#EF4444', label: 'Very uncomfortable', hint: '1.6 – 2.5' },
-            { color: '#991B1B', label: 'Extremely',          hint: '> 2.5' },
-          ].map((m) => (
-            <View key={m.label} style={styles.legendCell}>
+          {LEGEND.map((m, i) => ({ ...m, code: COMFORT_CODES[i] })).map((m) => (
+            <View key={m.code} style={styles.legendCell}>
               <View style={[styles.dot, { backgroundColor: m.color }]} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.legendText} numberOfLines={1}>{m.label}</Text>
+                <Text style={styles.legendText} numberOfLines={1}>{comfortLabel(m.code)}</Text>
                 <Text style={styles.legendHint}>{m.hint}</Text>
               </View>
             </View>

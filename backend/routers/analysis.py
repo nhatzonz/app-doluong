@@ -1,30 +1,31 @@
-import numpy as np
 from fastapi import APIRouter
 from ..models.schemas import (
     SegmentRequest, SegmentResponse,
     FullTripRequest, FullAnalysisResponse,
 )
-from ..services.wrms_calculator import calculate_wrms_from_xyz, estimate_fs
+from ..services.wrms_calculator import analyze_segment as compute_segment, energy_average
 from ..services.comfort_classifier import classify, get_color
 from ..services.ml_model import train_and_predict
 
 router = APIRouter()
 
+DEFAULT_SEGMENT_DURATION = 2.0
+
 
 @router.post("/analyze", response_model=SegmentResponse)
 async def analyze_segment(data: SegmentRequest):
     """Phan tich 1 segment (realtime)"""
-    ax = [s.ax for s in data.samples]
-    ay = [s.ay for s in data.samples]
-    az = [s.az for s in data.samples]
-    ts = [s.timestamp for s in data.samples]
-
-    fs = estimate_fs(ts)
-    wrms = calculate_wrms_from_xyz(ax, ay, az, fs=fs)
-    comfort = classify(wrms)
-    color = get_color(wrms)
-
-    return SegmentResponse(wrms=wrms, comfort=comfort, color=color)
+    result = compute_segment(
+        [s.ax for s in data.samples],
+        [s.ay for s in data.samples],
+        [s.az for s in data.samples],
+        [s.timestamp for s in data.samples],
+    )
+    return SegmentResponse(
+        **result,
+        comfort=classify(result["wrms"]),
+        color=get_color(result["wrms"]),
+    )
 
 
 @router.post("/analyze-full", response_model=FullAnalysisResponse)
@@ -32,15 +33,14 @@ async def analyze_full_trip(data: FullTripRequest):
     """Phan tich toan bo chuyen di voi ML"""
     wrms_values = [s.wrms for s in data.segments]
     speeds = [s.speed or 0 for s in data.segments]
+    durations = [s.duration or DEFAULT_SEGMENT_DURATION for s in data.segments]
 
     ml_result = train_and_predict(wrms_values, speeds)
-
-    overall_wrms = float(np.mean(wrms_values))
-    overall_comfort = classify(overall_wrms)
+    overall_wrms = energy_average(wrms_values, durations)
 
     return FullAnalysisResponse(
-        r2_score=ml_result["r2_score"],
-        feature_importances=ml_result["feature_importances"],
+        **ml_result,
         overall_wrms=overall_wrms,
-        overall_comfort=overall_comfort,
+        overall_comfort=classify(overall_wrms),
+        total_duration=float(sum(durations)),
     )

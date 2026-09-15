@@ -4,9 +4,11 @@ const MeasurementContext = createContext();
 
 const initialState = {
   isRecording: false,
-  sensorBuffer: [],       // buffer accelerometer hien tai
   locationHistory: [],     // lich su GPS [{lat, lon, speed, altitude, timestamp}]
-  segmentResults: [],      // ket qua WRMS [{wrms, comfort, color, lat, lon, speed}]
+  // ket qua WRMS [{wrms, aw_z, aw_xy, fs, duration, comfort, color, lat, lon, speed, timestamp, source}]
+  // lat/lon = null khi khong co GPS fix; speed = m/s trung binh trong segment; source = 'backend' | 'client'
+  segmentResults: [],
+  fullAnalysis: null,
   currentAccel: { x: 0, y: 0, z: 0 },
   currentLocation: null,
   currentWRMS: 0,
@@ -33,16 +35,9 @@ function reducer(state, action) {
     case 'UPDATE_ACCEL':
       return {
         ...state,
-        currentAccel: action.payload,
-        sampleCount: state.sampleCount + 10, // dispatch moi 10 mau
+        currentAccel: action.payload.accel,
+        sampleCount: action.payload.sampleCount,
       };
-    case 'ADD_TO_BUFFER':
-      return {
-        ...state,
-        sensorBuffer: [...state.sensorBuffer, action.payload],
-      };
-    case 'CLEAR_BUFFER':
-      return { ...state, sensorBuffer: [] };
     case 'UPDATE_LOCATION':
       return {
         ...state,

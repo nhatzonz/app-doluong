@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet, Dimensions } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { useMeasurementContext } from '../context/MeasurementContext';
 import { COLORS, SHADOW } from '../utils/colors';
+import { useT } from '../i18n';
 
 const CARD_HORIZONTAL_MARGIN = 20;
 const CARD_PADDING = 16;
@@ -84,6 +85,7 @@ function ChartCard({ title, subtitle, data, unit, color, referenceLine }) {
 
 export default function ChartScreen() {
   const { state } = useMeasurementContext();
+  const { t } = useT();
 
   return (
     <ScrollView
@@ -92,38 +94,38 @@ export default function ChartScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>ANALYTICS</Text>
-        <Text style={styles.title}>Biểu đồ Realtime</Text>
-        <Text style={styles.subtitle}>Dữ liệu cảm biến & chỉ số độ gồ ghề</Text>
+        <Text style={styles.eyebrow}>{t('charts.eyebrow')}</Text>
+        <Text style={styles.title}>{t('charts.title')}</Text>
+        <Text style={styles.subtitle}>{t('charts.subtitle')}</Text>
       </View>
 
       <ChartCard
-        title="Tốc độ"
-        subtitle="Ghi nhận từ GPS"
+        title={t('charts.speed')}
+        subtitle={t('charts.speedSub')}
         data={state.speedHistory}
         unit="km/h"
         color="#10B981"
       />
 
       <ChartCard
-        title="Độ cao"
-        subtitle="Cao độ tuyến đường"
+        title={t('charts.altitude')}
+        subtitle={t('charts.altitudeSub')}
         data={state.altitudeHistory}
         unit="m"
         color="#8B5CF6"
       />
 
       <ChartCard
-        title="Gia tốc tổng hợp"
-        subtitle="Đã trừ trọng lực"
+        title={t('charts.accel')}
+        subtitle={t('charts.accelSub')}
         data={state.accelHistory}
         unit="m/s²"
         color="#EC4899"
       />
 
       <ChartCard
-        title="WRMS"
-        subtitle="Weighted RMS — ISO 2631"
+        title={t('charts.wrms')}
+        subtitle={t('charts.wrmsSub')}
         data={state.wrmsHistory}
         unit="m/s²"
         color="#2E8BFF"

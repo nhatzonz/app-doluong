@@ -1,66 +1,79 @@
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
+
+LAGS = 3                 # so segment truoc dung lam feature
+MIN_TRAIN = 15
+MIN_TEST = 5
+FEATURE_NAMES = ["mean", "std", "peak", "speed"]
 
 
 def extract_features(wrms_values, speeds):
-    """Trich xuat features tu du lieu segment (tu readme.md)"""
-    wrms = np.array(wrms_values)
-    spd = np.array(speeds)
+    """Feature cho segment i chi lay tu cac segment TRUOC i (i-LAGS .. i-1)
+    va toc do cua chinh segment i (biet truoc khi do WRMS).
 
-    features = []
-    for i in range(len(wrms)):
-        # Dung sliding window de tinh features
-        start = max(0, i - 2)
-        window = wrms[start:i + 1]
+    Ban cu dung cua so chua chinh wrms[i] trong khi target cung la wrms[i]
+    -> ro ri target, R² vo nghia.
+    """
+    wrms = np.asarray(wrms_values, dtype=float)
+    spd = np.asarray(speeds, dtype=float)
 
-        mean_val = np.mean(window)
-        std_val = np.std(window) if len(window) > 1 else 0
-        peak_val = np.max(np.abs(window))
-
-        features.append([mean_val, std_val, peak_val])
-
-    return np.array(features)
+    X, y, prev = [], [], []
+    for i in range(LAGS, len(wrms)):
+        window = wrms[i - LAGS:i]
+        X.append([window.mean(), window.std(), window.max(), spd[i]])
+        y.append(wrms[i])
+        prev.append(wrms[i - 1])
+    return np.array(X), np.array(y), np.array(prev)
 
 
 def train_and_predict(wrms_values, speeds):
-    """Train RandomForest va tra ve ket qua (tu readme.md)"""
-    if len(wrms_values) < 5:
+    """Du doan WRMS segment ke tiep. Chia train/test theo thoi gian (khong
+    xao tron — cac segment lien ke tuong quan manh), va so voi baseline
+    'persistence' (du doan = segment truoc) de biet model co gia tri hay khong.
+    """
+    X, y, prev = extract_features(wrms_values, speeds)
+    n = len(y)
+    n_test = max(MIN_TEST, int(round(n * 0.2)))
+    n_train = n - n_test
+
+    if n_train < MIN_TRAIN:
+        need = LAGS + MIN_TRAIN + MIN_TEST
         return {
-            "r2_score": 0,
-            "feature_importances": {"mean": 0.33, "std": 0.33, "peak": 0.33},
+            "r2_score": None,
+            "baseline_r2": None,
+            "feature_importances": {},
+            "n_train": max(0, n_train),
+            "n_test": 0,
+            "note": f"Can it nhat {need} segment de danh gia model (hien co {len(wrms_values)}).",
         }
 
-    features = extract_features(wrms_values, speeds)
-    y = np.array(wrms_values)
+    X_train, X_test = X[:n_train], X[n_train:]
+    y_train, y_test = y[:n_train], y[n_train:]
 
-    scaler = StandardScaler()
-    X = scaler.fit_transform(features)
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    if len(X_train) < 2 or len(X_test) < 1:
-        return {
-            "r2_score": 0,
-            "feature_importances": {"mean": 0.33, "std": 0.33, "peak": 0.33},
-        }
-
+    # Tree model khong can scale feature.
     model = RandomForestRegressor(n_estimators=150, random_state=42)
     model.fit(X_train, y_train)
-
     pred = model.predict(X_test)
-    r2 = r2_score(y_test, pred)
 
-    importances = model.feature_importances_
-    feature_names = ["mean", "std", "peak"]
+    r2 = float(r2_score(y_test, pred))
+    baseline = float(r2_score(y_test, prev[n_train:]))
 
     return {
-        "r2_score": float(r2),
+        "r2_score": r2,
+        "baseline_r2": baseline,
         "feature_importances": {
-            name: float(imp) for name, imp in zip(feature_names, importances)
+            name: float(imp) for name, imp in zip(FEATURE_NAMES, model.feature_importances_)
         },
+        "n_train": n_train,
+        "n_test": n_test,
+        "note": _verdict(r2, baseline),
     }
+
+
+def _verdict(r2, baseline):
+    if r2 <= 0:
+        return "Model khong du doan duoc (R² <= 0, kem hon doan gia tri trung binh)"
+    if r2 <= baseline:
+        return "Model khong tot hon baseline (du doan = segment truoc)"
+    return "Model tot hon baseline"

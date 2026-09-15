@@ -8,7 +8,7 @@ Tinh WRMS theo tieu chuan ISO-2631, phan loai comfort, hien thi ban do va bieu d
 ```
 App Expo (Dien thoai)              Backend Python (Laptop)
 ├── Thu sensor realtime             ├── Nhan data tu app
-├── Hien thi ban do + bieu do       ├── Loc Butterworth ISO-2631
+├── Hien thi ban do + bieu do       ├── Trong so Wk/Wd ISO 2631-1
 ├── Giao dien ket qua               ├── Tinh WRMS
 └── Xuat CSV                        ├── ML RandomForest
                                     └── Tra ket qua ve app
@@ -92,7 +92,7 @@ Quet QR bang Expo Go tren dien thoai.
 
 1. Mo app, vao tab **Do Luong**
 2. Bam **START**
-3. Dat dien thoai tren xe, chay xe
+3. Gan dien thoai CO DINH (gia do/mat ghe), giu nguyen cach gan va toc do on dinh giua cac lan do de so sanh duoc
 4. Bam **STOP** khi hoan thanh
 5. Xem ket qua:
    - **Ban Do**: tuyen duong voi marker mau (xanh/cam/do)
@@ -121,7 +121,7 @@ app-doluong/
     ├── main.py                   # FastAPI + CORS
     ├── requirements.txt
     ├── routers/analysis.py       # /analyze, /analyze-full
-    └── services/                 # iso_filter, wrms_calculator, comfort_classifier, ml_model
+    └── services/                 # iso_weighting, wrms_calculator, comfort_classifier, ml_model
 ```
 
 ## API Endpoints
@@ -142,3 +142,25 @@ app-doluong/
 | 1.0 - 1.6 | Uncomfortable |
 | 1.6 - 2.5 | Very uncomfortable |
 | > 2.5 | Extremely uncomfortable |
+
+Bang goc trong ISO 2631-1 co cac khoang chong lan; app dung nguong duoi cua tung muc.
+
+## Phuong phap tinh WRMS
+
+Moi segment 2 giay (~100 mau @ 50 Hz), backend va fallback offline dung cung thuat toan:
+
+1. Noi suy ve luoi thoi gian deu theo timestamp cua sensor.
+2. Huong trong luc = vector gia toc trung binh cua segment. Truc dung = hinh chieu len huong nay,
+   2 truc ngang = vuong goc voi trong luc → khong phu thuoc cach dat phone. Bias cam bien bi loai (tru mean).
+3. Trong so tan so ISO 2631-1 Annex A: **Wk** cho truc dung, **Wd** cho truc ngang (ap dung bang FFT + Parseval).
+4. `av = sqrt(aw_x² + aw_y² + aw_z²)` voi k = 1 (comfort, nguoi ngoi, mat ghe). Tra ve ca `aw_z` va `aw_xy`.
+5. WRMS tong chuyen di = RMS theo nang luong: `sqrt(Σ av_i²·t_i / Σ t_i)`.
+
+Han che can biet:
+
+- 50 Hz chi danh gia duoc den 25 Hz (ISO xet den 80 Hz; phan lon rung cua xe nam duoi 20 Hz).
+- Do rung cua **dien thoai**, khong phai cua nguoi ngoi → phu thuoc cach gan va xe.
+- WRMS tang manh theo toc do → chi so sanh cac doan do cung toc do. CSV co cot `speed_kmh`.
+- ISO danh gia tren thoi luong dai; segment 2 s va chuyen di < 60 s chi mang tinh tham khao.
+- ML du doan WRMS segment ke tiep tu 3 segment truoc + toc do, chia train/test theo thoi gian,
+  so voi baseline "persistence". Can >= 23 segment.

@@ -41,6 +41,7 @@ export function useLocation(isActive) {
             lon: loc.coords.longitude,
             speed: speedMs,
             altitude: loc.coords.altitude,
+            accuracy: loc.coords.accuracy, // m — chi de hien thi chat luong GPS
             timestamp: loc.timestamp,
           };
           setLocation(payload);

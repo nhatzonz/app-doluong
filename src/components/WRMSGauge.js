@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle, G } from 'react-native-svg';
 import { COLORS, comfortGradient, SHADOW } from '../utils/colors';
+import { useT } from '../i18n';
 
 // Draw an arc centered at (cx, cy) with radius r between startAngle and endAngle (deg).
 function polar(cx, cy, r, deg) {
@@ -28,6 +29,7 @@ const SWEEP = END - START; // 270
 const MAX_WRMS = 3.0;
 
 export function WRMSGauge({ wrms = 0, comfort, isRecording }) {
+  const { t } = useT();
   const value = Math.max(0, Math.min(wrms, MAX_WRMS));
   const ratio = value / MAX_WRMS;
   const targetDeg = START + ratio * SWEEP;
@@ -130,7 +132,7 @@ export function WRMSGauge({ wrms = 0, comfort, isRecording }) {
               <Text style={[styles.pillText, { color: to }]}>{comfort}</Text>
             </View>
           ) : (
-            <Text style={styles.idle}>{isRecording ? 'Đang đo...' : 'Sẵn sàng'}</Text>
+            <Text style={styles.idle}>{isRecording ? t('gauge.measuring') : t('gauge.ready')}</Text>
           )}
         </View>
       </View>

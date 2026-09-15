@@ -8,8 +8,14 @@ import { useMeasurementContext } from '../context/MeasurementContext';
 import { MetricCard } from '../components/SensorDataCard';
 import { WRMSGauge } from '../components/WRMSGauge';
 import { StatusChip } from '../components/StatusChip';
-import { calculateDynamicResultant } from '../services/wrmsCalculator';
+import { calculateDynamicResultant, G } from '../services/wrmsCalculator';
 import { COLORS, SHADOW } from '../utils/colors';
+import { useNavigation } from '@react-navigation/native';
+import { useT } from '../i18n';
+import { useTripStore } from '../features/trips/TripStoreContext';
+import { PrepareModal } from '../features/measure/PrepareModal';
+import { LiveStatusBar } from '../features/measure/LiveStatusBar';
+import { IconButton } from '../features/ui/kit';
 
 function formatTime(sec) {
   const m = Math.floor(sec / 60);
@@ -35,6 +41,39 @@ export default function HomeScreen() {
 
   // UI-only: access histories for sparklines
   const { state } = useMeasurementContext();
+  const { t, comfortLabel } = useT();
+  const navigation = useNavigation();
+  const { pendingSetup, setPendingSetup, addMark } = useTripStore();
+
+  // Modal chuan bi do → goi dung startMeasurement() cua man nay (khong tao
+  // instance useMeasurement thu 2, tranh dang ky sensor 2 lan).
+  const [prepareVisible, setPrepareVisible] = useState(false);
+  const handleStartFromPrepare = (setup) => {
+    setPendingSetup(setup);
+    setPrepareVisible(false);
+    startMeasurement();
+  };
+
+  const [toast, setToast] = useState(null);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 1800);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  const handleMark = () => {
+    if (!currentLocation) {
+      setToast(t('home.markNoGps'));
+      return;
+    }
+    const n = addMark({
+      wallTime: Date.now(),
+      lat: currentLocation.lat,
+      lon: currentLocation.lon,
+      speed: currentLocation.speed ?? null,
+    });
+    setToast(t('home.marked', { n }));
+  };
 
   // UI-only ring buffers for per-axis sparklines (not used by logic)
   const [axBuf, setAxBuf] = useState([]);
@@ -43,9 +82,9 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!isRecording) return;
-    setAxBuf(prev => [...prev.slice(-29), currentAccel.x]);
-    setAyBuf(prev => [...prev.slice(-29), currentAccel.y]);
-    setAzBuf(prev => [...prev.slice(-29), currentAccel.z]);
+    setAxBuf(prev => [...prev.slice(-29), currentAccel.x * G]);
+    setAyBuf(prev => [...prev.slice(-29), currentAccel.y * G]);
+    setAzBuf(prev => [...prev.slice(-29), currentAccel.z * G]);
   }, [currentAccel.x, currentAccel.y, currentAccel.z, isRecording]);
 
   // Elapsed timer (ticks each render via RAF-like interval)
@@ -58,9 +97,12 @@ export default function HomeScreen() {
 
   const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
 
-  const resultant = calculateDynamicResultant(
-    currentAccel.x, currentAccel.y, currentAccel.z
-  );
+  // Sensor tra ve g → hien thi m/s². Chua co mau thi khong hien (tranh |0 - G| = 9.81)
+  const hasSample = sampleCount > 0;
+  const resultant = hasSample
+    ? calculateDynamicResultant(currentAccel.x, currentAccel.y, currentAccel.z)
+    : null;
+  const axisText = (v) => (hasSample ? (v * G).toFixed(3) : '--');
 
   const speedKmh = currentLocation?.speed != null
     ? (Math.max(0, currentLocation.speed) * 3.6)
@@ -93,10 +135,10 @@ export default function HomeScreen() {
       : 'reconnecting';
 
   const connLabel = locationError
-    ? 'GPS offline'
+    ? t('home.gpsOffline')
     : currentLocation
-      ? 'GPS connected'
-      : 'GPS...';
+      ? t('home.gpsConnected')
+      : t('home.gpsSearching');
 
   const speedTrend = state.speedHistory.slice(-30).map(p => p.value);
 
@@ -108,9 +150,13 @@ export default function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.headerWrap}>
-          <View>
-            <Text style={styles.eyebrow}>ROAD ROUGHNESS</Text>
-            <Text style={styles.title}>Realtime</Text>
+          <View style={styles.headLeft}>
+            <Text style={styles.eyebrow}>{t('home.eyebrow')}</Text>
+            <Text style={styles.title}>{t('home.title')}</Text>
+            <View style={styles.headIcons}>
+              <IconButton glyph="ⓘ" onPress={() => navigation.navigate('IsoGuide')} accessibilityLabel={t('guide.title')} />
+              <IconButton glyph="⚙︎" onPress={() => navigation.navigate('Settings')} accessibilityLabel={t('settings.title')} />
+            </View>
           </View>
           <View style={styles.headRightCol}>
             <StatusChip status={connStatus} label={connLabel} />
@@ -124,20 +170,29 @@ export default function HomeScreen() {
         {/* Warnings */}
         {!isAvailable && (
           <View style={styles.warnCard}>
-            <Text style={styles.warnText}>Accelerometer không khả dụng trên thiết bị này</Text>
+            <Text style={styles.warnText}>{t('home.accelUnavailable')}</Text>
           </View>
         )}
         {locationError && (
           <View style={styles.warnCard}>
-            <Text style={styles.warnText}>{locationError}</Text>
+            <Text style={styles.warnText}>{t('locationError')}</Text>
           </View>
+        )}
+
+        {isRecording && (
+          <LiveStatusBar
+            sampleCount={sampleCount}
+            currentLocation={currentLocation}
+            segmentResults={segmentResults}
+            setup={pendingSetup}
+          />
         )}
 
         {/* Hero Gauge */}
         <View style={styles.gaugeWrap}>
           <WRMSGauge
             wrms={currentWRMS}
-            comfort={currentComfort}
+            comfort={comfortLabel(currentComfort)}
             isRecording={isRecording}
           />
         </View>
@@ -155,7 +210,7 @@ export default function HomeScreen() {
           )}
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={isRecording ? stopMeasurement : startMeasurement}
+            onPress={isRecording ? stopMeasurement : () => setPrepareVisible(true)}
             style={styles.fabTouch}
           >
             <LinearGradient
@@ -165,30 +220,42 @@ export default function HomeScreen() {
               style={styles.fab}
             >
               <Text style={styles.fabLabel}>
-                {isRecording ? 'STOP' : 'START'}
+                {isRecording ? t('home.stop') : t('home.start')}
               </Text>
               <Text style={styles.fabSub}>
-                {isRecording ? 'Kết thúc đo' : 'Bắt đầu đo'}
+                {isRecording ? t('home.stopSub') : t('home.startSub')}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
+          {isRecording && (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleMark}
+              style={styles.markBtn}
+              accessibilityLabel={t('home.mark')}
+            >
+              <Text style={styles.markGlyph}>📍</Text>
+              <Text style={styles.markLabel}>{t('home.mark')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
+        {toast && <Text style={styles.toast}>{toast}</Text>}
 
         {/* Mini stats under FAB */}
         <View style={styles.miniRow}>
           <View style={styles.miniItem}>
             <Text style={styles.miniValue}>{sampleCount}</Text>
-            <Text style={styles.miniLabel}>SAMPLES</Text>
+            <Text style={styles.miniLabel}>{t('home.samples')}</Text>
           </View>
           <View style={styles.miniDivider} />
           <View style={styles.miniItem}>
             <Text style={styles.miniValue}>{segmentResults.length}</Text>
-            <Text style={styles.miniLabel}>SEGMENTS</Text>
+            <Text style={styles.miniLabel}>{t('home.segments')}</Text>
           </View>
           <View style={styles.miniDivider} />
           <View style={styles.miniItem}>
-            <Text style={styles.miniValue}>{resultant.toFixed(2)}</Text>
-            <Text style={styles.miniLabel}>DYNAMIC</Text>
+            <Text style={styles.miniValue}>{resultant != null ? resultant.toFixed(2) : '--'}</Text>
+            <Text style={styles.miniLabel}>{t('home.dynamic')}</Text>
           </View>
         </View>
 
@@ -197,7 +264,7 @@ export default function HomeScreen() {
           <View style={styles.gridRow}>
             <MetricCard
               label="aX"
-              value={currentAccel.x.toFixed(3)}
+              value={axisText(currentAccel.x)}
               unit="m/s²"
               trend={axBuf}
               color="#2E8BFF"
@@ -205,7 +272,7 @@ export default function HomeScreen() {
             <View style={{ width: 12 }} />
             <MetricCard
               label="aY"
-              value={currentAccel.y.toFixed(3)}
+              value={axisText(currentAccel.y)}
               unit="m/s²"
               trend={ayBuf}
               color="#8B5CF6"
@@ -215,14 +282,14 @@ export default function HomeScreen() {
           <View style={styles.gridRow}>
             <MetricCard
               label="aZ"
-              value={currentAccel.z.toFixed(3)}
+              value={axisText(currentAccel.z)}
               unit="m/s²"
               trend={azBuf}
               color="#EC4899"
             />
             <View style={{ width: 12 }} />
             <MetricCard
-              label="SPEED"
+              label={t('home.speed')}
               value={speedKmh.toFixed(1)}
               unit="km/h"
               trend={speedTrend}
@@ -258,6 +325,12 @@ export default function HomeScreen() {
 
         <View style={{ height: 110 }} />
       </ScrollView>
+
+      <PrepareModal
+        visible={prepareVisible}
+        onCancel={() => setPrepareVisible(false)}
+        onStart={handleStartFromPrepare}
+      />
     </View>
   );
 }
@@ -277,6 +350,42 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     marginBottom: 8,
+  },
+  headLeft: {
+    flexShrink: 1,
+  },
+  headIcons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  markBtn: {
+    position: 'absolute',
+    right: 40,
+    top: 18,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOW.md,
+  },
+  markGlyph: {
+    fontSize: 22,
+  },
+  markLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginTop: 1,
+  },
+  toast: {
+    alignSelf: 'center',
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   eyebrow: {
     fontSize: 10,

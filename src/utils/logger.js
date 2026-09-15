@@ -72,8 +72,8 @@ export function createRollingStats() {
 }
 
 // Diagnose gravity magnitude from 1s of raw samples.
-// Expected: ‖mean‖ ≈ 1.0 (g) hoac ≈ 9.81 (m/s²). Cong thuc hien dung
-// magnitude-based nen khong phu thuoc truc trong luc.
+// Expected: ‖mean‖ ≈ 1.0 (g) hoac ≈ 9.81 (m/s²). WRMS chieu gia toc len huong
+// trong luc trung binh nen khong phu thuoc truc nao chiu trong luc.
 export function diagnoseGravity(meanX, meanY, meanZ) {
   const ax = Math.abs(meanX), ay = Math.abs(meanY), az = Math.abs(meanZ);
   const max = Math.max(ax, ay, az);

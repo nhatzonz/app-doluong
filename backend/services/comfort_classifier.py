@@ -1,5 +1,10 @@
 def classify(wrms):
-    """Phan loai ISO-2631 comfort level"""
+    """Phan loai ISO-2631 comfort level.
+
+    Bang goc trong ISO 2631-1 (Annex C) co cac khoang chong lan (vd 0.5-1.0,
+    0.8-1.6) de phan anh tinh chu quan; o day dung nguong gioi han duoi cua
+    tung muc de co phan loai duy nhat.
+    """
     if wrms < 0.315:
         return "Comfortable"
     elif wrms < 0.63:

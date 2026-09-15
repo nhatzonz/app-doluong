@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert,
 } from 'react-native';
@@ -8,40 +8,161 @@ import { exportCSV } from '../services/csvExport';
 import { analyzeFullTrip } from '../services/api';
 import { COLORS, SHADOW, comfortGradient, comfortSoloColor } from '../utils/colors';
 import { classifyComfort } from '../utils/comfortClassifier';
+import { energyAverageWRMS } from '../services/wrmsCalculator';
+import { MIN_ISO_DURATION_SEC } from '../utils/constants';
+import { useNavigation } from '@react-navigation/native';
+import { useT } from '../i18n';
+import { useTripStore } from '../features/trips/TripStoreContext';
+import { tripIdFor } from '../features/trips/tripStorage';
+import { wrmsBreakdown, SHOCK_WRMS } from '../features/analytics/tripMath';
+
+const ML_MIN_SEGMENTS = 23; // khop backend: LAGS + MIN_TRAIN + MIN_TEST
+// Canh bao khi cac doan soc chiem qua nua nang luong rung cua WRMS tong
+const SHOCK_DOMINANCE = 0.5;
+
+// The truc tiep khi dang do: doan moi nhat + dong ho "cap nhat X giay truoc"
+function LiveCard({ segments, t, comfortLabel }) {
+  const latest = segments[segments.length - 1];
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick(x => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!latest) {
+    return (
+      <View style={styles.liveCard}>
+        <View style={styles.liveHead}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveLabel}>{t('results.live')}</Text>
+        </View>
+        <Text style={styles.liveWaiting}>{t('results.waitingFirst')}</Text>
+      </View>
+    );
+  }
+  const color = latest.color || comfortSoloColor(latest.wrms);
+  const ago = latest.wallTimeEnd ? Math.max(0, Math.round((Date.now() - latest.wallTimeEnd) / 1000)) : null;
+  return (
+    <View style={styles.liveCard}>
+      <View style={styles.liveHead}>
+        <View style={styles.liveDot} />
+        <Text style={styles.liveLabel}>{t('results.live')}</Text>
+        <Text style={styles.liveMeta}>
+          {t('results.latestSegment', { n: segments.length })}
+          {ago != null ? ` · ${t('results.updatedAgo', { s: ago })}` : ''}
+        </Text>
+      </View>
+      <View style={styles.liveRow}>
+        <Text style={[styles.liveValue, { color }]}>
+          {latest.wrms.toFixed(3)} <Text style={styles.listUnit}>m/s²</Text>
+        </Text>
+        <View style={[styles.comfortPill, { backgroundColor: color + '1A', borderColor: color + '33' }]}>
+          <View style={[styles.comfortDot, { backgroundColor: color }]} />
+          <Text style={[styles.comfortText, { color }]}>{comfortLabel(latest.comfort)}</Text>
+        </View>
+      </View>
+      {Number.isFinite(latest.aw_z) && (
+        <Text style={styles.listCoord}>
+          aw_z {latest.aw_z.toFixed(3)} · aw_xy {Number.isFinite(latest.aw_xy) ? latest.aw_xy.toFixed(3) : '--'}
+          {latest.speed != null ? ` · ${(latest.speed * 3.6).toFixed(0)} km/h` : ''}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// Danh sach chi render lai khi segmentResults doi (2s/lan), khong theo cac
+// cap nhat gia toc 10 lan/giay cua context. Dang do → doan moi nhat o tren.
+const SegmentList = memo(function SegmentList({ segments, newestFirst, t, comfortLabel }) {
+  const order = newestFirst
+    ? segments.map((_, i) => segments.length - 1 - i)
+    : segments.map((_, i) => i);
+  return (
+    <>
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle}>{t('results.list')}</Text>
+        <Text style={styles.listCount}>
+          {segments.length}{newestFirst ? ` · ${t('results.newestFirst')}` : ''}
+        </Text>
+      </View>
+      <View style={styles.listCard}>
+        {order.map((index, pos) => {
+          const item = segments[index];
+          const color = item.color || comfortSoloColor(item.wrms);
+          return (
+            <View
+              key={index}
+              style={[styles.listRow, pos === order.length - 1 && { borderBottomWidth: 0 }]}
+            >
+              <View style={styles.listIndex}>
+                <Text style={styles.listIndexText}>#{index + 1}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.listWRMS}>{item.wrms.toFixed(3)}
+                  <Text style={styles.listUnit}> m/s²</Text>
+                </Text>
+                <Text style={styles.listCoord}>
+                  {item.lat != null ? `${item.lat.toFixed(4)}, ${item.lon.toFixed(4)}` : t('common.noGps')}
+                  {item.speed != null ? ` · ${(item.speed * 3.6).toFixed(0)} km/h` : ''}
+                  {item.source === 'client' ? ` · ${t('common.offline')}` : ''}
+                </Text>
+              </View>
+              <View style={[styles.comfortPill, { backgroundColor: color + '1A', borderColor: color + '33' }]}>
+                <View style={[styles.comfortDot, { backgroundColor: color }]} />
+                <Text style={[styles.comfortText, { color }]}>{comfortLabel(item.comfort)}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </>
+  );
+});
 
 export default function ResultScreen() {
   const { state, dispatch } = useMeasurementContext();
   const { segmentResults, fullAnalysis } = state;
   const [loading, setLoading] = useState(false);
+  const { t, comfortLabel } = useT();
+  const navigation = useNavigation();
+  const { index: tripIndex, lastSave, minSegments } = useTripStore();
 
-  const avgWRMS = segmentResults.length > 0
-    ? segmentResults.reduce((s, r) => s + r.wrms, 0) / segmentResults.length
-    : 0;
+  // Chuyen hien tai da duoc TripAutoSaver luu chua?
+  const currentTripId = state.startTime ? tripIdFor(state.startTime) : null;
+  const savedTrip = !state.isRecording && currentTripId && tripIndex.some(m => m.id === currentTripId);
+  const skippedSave = !state.isRecording && lastSave?.skipped && lastSave.startedAt === state.startTime;
+
+  // RMS theo nang luong (trong so thoi luong) — khong phai trung binh cong
+  const avgWRMS = energyAverageWRMS(segmentResults);
+  const totalDuration = segmentResults.reduce((s, r) => s + (r.duration || 2), 0);
+  const clientCount = segmentResults.filter(r => r.source === 'client').length;
   const overallComfort = classifyComfort(avgWRMS);
   const [heroFrom, heroTo] = comfortGradient(avgWRMS);
 
-  const minWRMS = segmentResults.length > 0
-    ? Math.min(...segmentResults.map(s => s.wrms))
-    : 0;
-  const maxWRMS = segmentResults.length > 0
-    ? Math.max(...segmentResults.map(s => s.wrms))
-    : 0;
+  // Chi tinh lai khi co doan moi (khong theo cap nhat gia toc 10 lan/giay)
+  const breakdown = useMemo(() => wrmsBreakdown(segmentResults), [segmentResults]);
+  const comfortableShare = useMemo(() => {
+    if (segmentResults.length === 0) return 0;
+    const calm = segmentResults.filter(s => s.wrms < 0.315).reduce((a, s) => a + (s.duration || 2), 0);
+    return calm / totalDuration;
+  }, [segmentResults, totalDuration]);
+  const shockDominated = breakdown.shockCount > 0 && breakdown.shockEnergyShare > SHOCK_DOMINANCE;
 
   const handleExportCSV = async () => {
     if (segmentResults.length === 0) {
-      Alert.alert('Chưa có dữ liệu', 'Hãy đo trước khi xuất CSV');
+      Alert.alert(t('common.noData'), t('results.noDataExport'));
       return;
     }
     try {
       await exportCSV(segmentResults);
     } catch (e) {
-      Alert.alert('Lỗi', 'Không thể xuất CSV: ' + e.message);
+      Alert.alert(t('common.error'), t('results.exportFailed', { msg: e.message }));
     }
   };
 
   const handleMLAnalysis = async () => {
-    if (segmentResults.length < 5) {
-      Alert.alert('Chưa đủ dữ liệu', 'Cần ít nhất 5 segment để phân tích ML');
+    if (segmentResults.length < ML_MIN_SEGMENTS) {
+      Alert.alert(t('common.noData'), t('results.mlNeed', { n: ML_MIN_SEGMENTS }));
       return;
     }
     setLoading(true);
@@ -49,7 +170,7 @@ export default function ResultScreen() {
       const result = await analyzeFullTrip(segmentResults);
       dispatch({ type: 'SET_FULL_ANALYSIS', payload: result });
     } catch (e) {
-      Alert.alert('Lỗi', 'Không kết nối được backend: ' + e.message);
+      Alert.alert(t('common.error'), t('results.backendFailed', { msg: e.message }));
     } finally {
       setLoading(false);
     }
@@ -62,10 +183,14 @@ export default function ResultScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.headerBlock}>
-        <Text style={styles.eyebrow}>REPORT</Text>
-        <Text style={styles.title}>Kết quả đo</Text>
-        <Text style={styles.subtitle}>Tổng hợp & phân tích tuyến đường</Text>
+        <Text style={styles.eyebrow}>{t('results.eyebrow')}</Text>
+        <Text style={styles.title}>{t('results.title')}</Text>
+        <Text style={styles.subtitle}>{t('results.subtitle')}</Text>
       </View>
+
+      {state.isRecording && (
+        <LiveCard segments={segmentResults} t={t} comfortLabel={comfortLabel} />
+      )}
 
       {/* Hero summary */}
       <LinearGradient
@@ -74,31 +199,75 @@ export default function ResultScreen() {
         end={{ x: 1, y: 1 }}
         style={styles.hero}
       >
-        <Text style={styles.heroLabel}>WRMS TRUNG BÌNH</Text>
+        <Text style={styles.heroLabel}>{t('results.total')}</Text>
         <Text style={styles.heroValue}>{avgWRMS.toFixed(3)}</Text>
         <Text style={styles.heroUnit}>m/s²</Text>
 
         <View style={styles.heroPill}>
-          <Text style={styles.heroPillText}>{overallComfort || '—'}</Text>
+          <Text style={styles.heroPillText}>{comfortLabel(overallComfort) || '—'}</Text>
         </View>
+
+        {segmentResults.length > 0 && (
+          <Text style={styles.heroNote}>
+            {t('results.duration', { s: Math.round(totalDuration) })}
+            {totalDuration < MIN_ISO_DURATION_SEC ? ` · ${t('results.tooShort')}` : ''}
+            {clientCount > 0 ? ` · ${t('results.offlineCount', { n: clientCount })}` : ''}
+          </Text>
+        )}
 
         <View style={styles.heroStats}>
           <View style={styles.heroStat}>
-            <Text style={styles.heroStatLabel}>Segments</Text>
+            <Text style={styles.heroStatLabel}>{t('common.segments')}</Text>
             <Text style={styles.heroStatValue}>{segmentResults.length}</Text>
           </View>
           <View style={styles.heroStatDivider} />
           <View style={styles.heroStat}>
-            <Text style={styles.heroStatLabel}>Min</Text>
-            <Text style={styles.heroStatValue}>{minWRMS.toFixed(2)}</Text>
+            <Text style={styles.heroStatLabel}>{t('results.median')}</Text>
+            <Text style={styles.heroStatValue}>{breakdown.median != null ? breakdown.median.toFixed(3) : '--'}</Text>
           </View>
           <View style={styles.heroStatDivider} />
           <View style={styles.heroStat}>
-            <Text style={styles.heroStatLabel}>Max</Text>
-            <Text style={styles.heroStatValue}>{maxWRMS.toFixed(2)}</Text>
+            <Text style={styles.heroStatLabel}>{t('results.comfortableShare')}</Text>
+            <Text style={styles.heroStatValue}>{segmentResults.length ? `${Math.round(comfortableShare * 100)}%` : '--'}</Text>
+          </View>
+          <View style={styles.heroStatDivider} />
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatLabel}>{t('results.max')}</Text>
+            <Text style={styles.heroStatValue}>{breakdown.max != null ? breakdown.max.toFixed(2) : '--'}</Text>
           </View>
         </View>
       </LinearGradient>
+
+      {shockDominated && (
+        <View style={styles.shockNote}>
+          <Text style={styles.shockText}>
+            {t('results.shockNote', {
+              n: breakdown.shockCount,
+              limit: SHOCK_WRMS,
+              p: Math.round(breakdown.shockEnergyShare * 100),
+              w: breakdown.wrmsWithoutShocks != null ? breakdown.wrmsWithoutShocks.toFixed(3) : '--',
+              c: breakdown.wrmsWithoutShocks != null ? comfortLabel(classifyComfort(breakdown.wrmsWithoutShocks)) : '--',
+            })}
+          </Text>
+        </View>
+      )}
+
+      {savedTrip && (
+        <TouchableOpacity
+          style={styles.tripLink}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate('TripDetail', { id: currentTripId })}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.actionTitle}>{t('results.viewTrip')}</Text>
+            <Text style={styles.actionHint}>{t('results.viewTripHint')}</Text>
+          </View>
+          <Text style={styles.tripLinkArrow}>›</Text>
+        </TouchableOpacity>
+      )}
+      {skippedSave && segmentResults.length > 0 && (
+        <Text style={styles.notSaved}>{t('results.notSaved', { n: minSegments })}</Text>
+      )}
 
       {/* ML card */}
       {fullAnalysis && (
@@ -108,18 +277,24 @@ export default function ResultScreen() {
               <Text style={styles.mlBadgeText}>ML</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.mlTitle}>RandomForest Analysis</Text>
-              <Text style={styles.mlSub}>Coefficient of determination</Text>
+              <Text style={styles.mlTitle}>{t('results.mlTitle')}</Text>
+              <Text style={styles.mlSub}>
+                {t('results.mlSub', { b: fullAnalysis.baseline_r2 != null ? fullAnalysis.baseline_r2.toFixed(3) : '--' })}
+              </Text>
             </View>
             <Text style={styles.mlValue}>
-              {fullAnalysis.r2_score?.toFixed(3) || '--'}
+              {fullAnalysis.r2_score != null ? fullAnalysis.r2_score.toFixed(3) : '--'}
             </Text>
           </View>
-          {fullAnalysis.feature_importances && (
+          {!!fullAnalysis.note && (
+            <Text style={styles.mlNote}>{fullAnalysis.note}</Text>
+          )}
+          {fullAnalysis.feature_importances && Object.keys(fullAnalysis.feature_importances).length > 0 && (
             <View style={styles.mlFeatures}>
               <FeatureBar label="Mean" value={fullAnalysis.feature_importances.mean || 0} />
               <FeatureBar label="STD" value={fullAnalysis.feature_importances.std || 0} />
               <FeatureBar label="Peak" value={fullAnalysis.feature_importances.peak || 0} />
+              <FeatureBar label="Speed" value={fullAnalysis.feature_importances.speed || 0} />
             </View>
           )}
         </View>
@@ -135,8 +310,8 @@ export default function ResultScreen() {
           <View style={[styles.actionIcon, { backgroundColor: '#ECFDF5' }]}>
             <Text style={styles.actionIconText}>CSV</Text>
           </View>
-          <Text style={styles.actionTitle}>Xuất CSV</Text>
-          <Text style={styles.actionHint}>Chia sẻ dữ liệu</Text>
+          <Text style={styles.actionTitle}>{t('results.exportCsv')}</Text>
+          <Text style={styles.actionHint}>{t('results.exportCsvHint')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -149,58 +324,28 @@ export default function ResultScreen() {
             <Text style={[styles.actionIconText, { color: COLORS.primary }]}>ML</Text>
           </View>
           <Text style={styles.actionTitle}>
-            {loading ? 'Đang phân tích...' : 'Phân tích ML'}
+            {loading ? t('results.mlLoading') : t('results.ml')}
           </Text>
           <Text style={styles.actionHint}>
-            {loading ? 'Vui lòng đợi' : 'RandomForest'}
+            {loading ? t('results.mlWait') : t('results.mlHint')}
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Segment list */}
       {segmentResults.length > 0 && (
-        <>
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Segments</Text>
-            <Text style={styles.listCount}>{segmentResults.length}</Text>
-          </View>
-          <View style={styles.listCard}>
-            {segmentResults.map((item, index) => {
-              const color = item.color || comfortSoloColor(item.wrms);
-              return (
-                <View
-                  key={index}
-                  style={[
-                    styles.listRow,
-                    index === segmentResults.length - 1 && { borderBottomWidth: 0 },
-                  ]}
-                >
-                  <View style={styles.listIndex}>
-                    <Text style={styles.listIndexText}>#{index + 1}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.listWRMS}>{item.wrms.toFixed(3)}
-                      <Text style={styles.listUnit}> m/s²</Text>
-                    </Text>
-                    <Text style={styles.listCoord}>
-                      {item.lat?.toFixed(4) || '--'}, {item.lon?.toFixed(4) || '--'}
-                    </Text>
-                  </View>
-                  <View style={[styles.comfortPill, { backgroundColor: color + '1A', borderColor: color + '33' }]}>
-                    <View style={[styles.comfortDot, { backgroundColor: color }]} />
-                    <Text style={[styles.comfortText, { color }]}>{item.comfort}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </>
+        <SegmentList
+          segments={segmentResults}
+          newestFirst={state.isRecording}
+          t={t}
+          comfortLabel={comfortLabel}
+        />
       )}
 
-      {segmentResults.length === 0 && (
+      {segmentResults.length === 0 && !state.isRecording && (
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>Chưa có dữ liệu đo.</Text>
-          <Text style={styles.emptyHint}>Mở tab Đo lường và bấm START để bắt đầu.</Text>
+          <Text style={styles.emptyText}>{t('results.empty')}</Text>
+          <Text style={styles.emptyHint}>{t('results.emptyHint')}</Text>
         </View>
       )}
     </ScrollView>
@@ -291,6 +436,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  heroNote: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
   heroStats: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -323,6 +475,56 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.3)',
   },
 
+  liveCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.bad + '33',
+    ...SHADOW.sm,
+  },
+  liveHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.bad },
+  liveLabel: { fontSize: 11, fontWeight: '800', color: COLORS.bad, letterSpacing: 1 },
+  liveMeta: { flex: 1, textAlign: 'right', fontSize: 11, color: COLORS.textMuted, fontWeight: '600' },
+  liveRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  liveValue: { fontSize: 28, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
+  liveWaiting: { fontSize: 13, color: COLORS.textMuted, marginTop: 6, fontWeight: '600' },
+  shockNote: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+  },
+  shockText: { fontSize: 12, color: '#92400E', fontWeight: '600', lineHeight: 17 },
+  tripLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    marginHorizontal: 20,
+    marginTop: 14,
+    padding: 16,
+    ...SHADOW.sm,
+  },
+  tripLinkArrow: {
+    fontSize: 28,
+    color: COLORS.textMuted,
+    fontWeight: '300',
+  },
+  notSaved: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   mlCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 20,
@@ -366,6 +568,12 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontVariant: ['tabular-nums'],
     letterSpacing: -0.5,
+  },
+  mlNote: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 10,
+    fontWeight: '600',
   },
   mlFeatures: {
     marginTop: 12,

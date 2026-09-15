@@ -3,65 +3,95 @@ import { useMeasurementContext } from '../context/MeasurementContext';
 import { useAccelerometer } from './useAccelerometer';
 import { useLocation } from './useLocation';
 import { analyzeSegment } from '../services/api';
-import { calculateSegmentWRMS, calculateDynamicResultant } from '../services/wrmsCalculator';
+import { analyzeSegmentLocal, calculateDynamicResultant } from '../services/wrmsCalculator';
 import { classifyComfort, getComfortColor } from '../utils/comfortClassifier';
-import { SEGMENT_SIZE } from '../utils/constants';
+import { SEGMENT_SIZE, MIN_SEGMENT_SAMPLES, GPS_MAX_AGE_MS, UI_UPDATE_EVERY } from '../utils/constants';
 import { log, warn, createRollingStats, diagnoseGravity } from '../utils/logger';
 
 export function useMeasurement() {
   const { state, dispatch } = useMeasurementContext();
   const bufferRef = useRef([]);
+  const sampleCountRef = useRef(0);
   const locationRef = useRef(null);
-  const isRecordingRef = useRef(false);
+  const segmentSpeedsRef = useRef([]);
   const dispatchRef = useRef(dispatch);
   dispatchRef.current = dispatch;
-
-  const { data: accelData, isAvailable } = useAccelerometer(state.isRecording);
-  const { location, errorMsg } = useLocation(state.isRecording);
-
-  // Sync refs
-  isRecordingRef.current = state.isRecording;
-
-  // Cap nhat location vao ref + context (location thay doi cham, 1 lan/giay)
-  useEffect(() => {
-    if (location && isRecordingRef.current) {
-      locationRef.current = location;
-      dispatchRef.current({ type: 'UPDATE_LOCATION', payload: location });
-    }
-  }, [location]);
-
-  // Xu ly accelerometer data - dung ref de tranh re-render loop
-  const accelRef = useRef({ x: 0, y: 0, z: 0 });
-  const prevTimestampRef = useRef(0);
 
   // DIAG: rolling stats + gravity check
   const statsRef = useRef(createRollingStats());
   const lastFlushRef = useRef(0);
   const gravityDiagnosedRef = useRef(false);
 
-  useEffect(() => {
-    if (!isRecordingRef.current) return;
+  const processSegment = useCallback(async (samples, segmentSpeeds) => {
+    // Chi gan vi tri khi GPS fix con moi; khong co thi de null (khong gan 0,0)
+    const fix = locationRef.current;
+    const fresh = fix && (Date.now() - fix.receivedAt) <= GPS_MAX_AGE_MS;
+    const speeds = segmentSpeeds.length > 0 ? segmentSpeeds : (fresh ? [fix.speed] : []);
+    const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null;
+    const loc = fresh
+      ? { lat: fix.lat, lon: fix.lon, speed: avgSpeed, altitude: fix.altitude }
+      : null;
+    const n = samples.length;
+    const dur = (samples[n - 1].timestamp - samples[0].timestamp) / 1000;
+
+    // timestamp cua sensor tinh tu luc bat may (khong phai gio thuc) → chi dung
+    // de tinh fs. wallTime/wallTimeEnd (epoch ms) dung cho hien thi, CSV, ghep GPS.
+    // processSegment duoc goi ngay khi nhan mau cuoi nen Date.now() ≈ thoi diem mau cuoi.
+    const wallTimeEnd = Date.now();
+    const meta = {
+      lat: loc?.lat ?? null,
+      lon: loc?.lon ?? null,
+      speed: avgSpeed,
+      timestamp: samples[0].timestamp,
+      wallTime: wallTimeEnd - Math.round(dur * 1000),
+      wallTimeEnd,
+    };
+    log('SEG', `process n=${n} dur=${dur.toFixed(2)}s (${dur > 0 ? ((n - 1) / dur).toFixed(1) : '—'}Hz) | gps=${fresh ? 'yes' : 'NO'}`);
+
+    try {
+      const t0 = Date.now();
+      const result = await analyzeSegment(
+        samples.map(s => ({ ax: s.x, ay: s.y, az: s.z, timestamp: s.timestamp })),
+        loc
+      );
+      log('API', `← backend ok in ${Date.now() - t0}ms | wrms=${result.wrms?.toFixed(4)} aw_z=${result.aw_z?.toFixed(4)} comfort=${result.comfort}`);
+      dispatchRef.current({
+        type: 'ADD_SEGMENT_RESULT',
+        payload: { ...result, ...meta, source: 'backend' },
+      });
+    } catch (e) {
+      warn('API', `✗ backend error: ${e?.message || e}. Fallback → client WRMS`);
+      // Fallback: cung thuat toan ISO 2631-1 nhu backend
+      const result = analyzeSegmentLocal(samples);
+      log('WRMS', `client fallback: wrms=${result.wrms.toFixed(4)} aw_z=${result.aw_z.toFixed(4)}`);
+      dispatchRef.current({
+        type: 'ADD_SEGMENT_RESULT',
+        payload: {
+          ...result,
+          comfort: classifyComfort(result.wrms),
+          color: getComfortColor(result.wrms),
+          ...meta,
+          source: 'client',
+        },
+      });
+    }
+  }, []);
+
+  const handleSample = useCallback((sample) => {
+    bufferRef.current.push(sample);
+    sampleCountRef.current++;
+
+    // DIAG: feed rolling stats
+    const dyn = calculateDynamicResultant(sample.x, sample.y, sample.z);
+    statsRef.current.push(sample.x, sample.y, sample.z, dyn);
 
     const now = Date.now();
-    prevTimestampRef.current = now;
-
-    accelRef.current = accelData;
-
-    const sample = { x: accelData.x, y: accelData.y, z: accelData.z, timestamp: now };
-    bufferRef.current.push(sample);
-
-    // DIAG: feed rolling stats — dynRes da la gia toc dong (tru trong luc)
-    const dyn = calculateDynamicResultant(accelData.x, accelData.y, accelData.z);
-    statsRef.current.push(accelData.x, accelData.y, accelData.z, dyn);
-
-    // DIAG: flush stats every 1s
     if (now - lastFlushRef.current >= 1000) {
       lastFlushRef.current = now;
       const s = statsRef.current.flush();
       if (s) {
-        log('ACCEL', `1s stats: n=${s.n} (${s.hz}Hz) mean=(${s.meanX},${s.meanY},${s.meanZ}) dynRes mean=${s.meanR} rms=${s.rmsR} min=${s.minR} max=${s.maxR}`);
+        log('ACCEL', `1s stats: n=${s.n} (${s.hz}Hz) mean=(${s.meanX},${s.meanY},${s.meanZ})g dynRes mean=${s.meanR} rms=${s.rmsR} min=${s.minR} max=${s.maxR}`);
 
-        // DIAG: one-time gravity diagnosis after first full second
         if (!gravityDiagnosedRef.current) {
           gravityDiagnosedRef.current = true;
           const d = diagnoseGravity(
@@ -75,62 +105,43 @@ export function useMeasurement() {
       }
     }
 
-    // Cap nhat UI moi 10 mau (5 lan/giay thay vi 50)
-    if (bufferRef.current.length % 10 === 0) {
-      dispatchRef.current({ type: 'UPDATE_ACCEL', payload: accelData });
-
-      // Gia toc dong (da tru trong luc) de hien thi dung tren bieu do
-      const resultant = calculateDynamicResultant(accelData.x, accelData.y, accelData.z);
+    // Cap nhat UI thua (5 lan/giay) — logic do khong phu thuoc vao UI
+    if (sampleCountRef.current % UI_UPDATE_EVERY === 0) {
+      dispatchRef.current({
+        type: 'UPDATE_ACCEL',
+        payload: { accel: { x: sample.x, y: sample.y, z: sample.z }, sampleCount: sampleCountRef.current },
+      });
       dispatchRef.current({
         type: 'ADD_ACCEL_HISTORY',
-        payload: { value: resultant, timestamp: now },
+        payload: { value: dyn, timestamp: now },
       });
     }
 
-    // Khi du 1 segment (100 mau) -> gui len backend
     if (bufferRef.current.length >= SEGMENT_SIZE) {
-      const segmentSamples = [...bufferRef.current];
+      const segmentSamples = bufferRef.current;
+      const speeds = segmentSpeedsRef.current;
       bufferRef.current = [];
-      processSegment(segmentSamples, locationRef.current);
+      segmentSpeedsRef.current = [];
+      processSegment(segmentSamples, speeds);
     }
-  }, [accelData.x, accelData.y, accelData.z]);
+  }, [processSegment]);
 
-  const processSegment = async (samples, currentLoc) => {
-    const loc = currentLoc || { lat: 0, lon: 0, speed: 0, altitude: 0 };
+  const { isAvailable } = useAccelerometer(state.isRecording, handleSample);
+  const { location, errorMsg } = useLocation(state.isRecording);
 
-    // DIAG: segment summary
-    const n = samples.length;
-    const dur = n > 1 ? (samples[n - 1].timestamp - samples[0].timestamp) / 1000 : 0;
-    const hz = dur > 0 ? (n / dur).toFixed(1) : '—';
-    log('SEG', `process n=${n} dur=${dur.toFixed(2)}s (${hz}Hz) | gpsLoc=${currentLoc ? 'yes' : 'NO (fallback 0,0)'}`);
-
-    try {
-      const t0 = Date.now();
-      const result = await analyzeSegment(
-        samples.map(s => ({ ax: s.x, ay: s.y, az: s.z, timestamp: s.timestamp })),
-        loc
-      );
-      log('API', `← backend ok in ${Date.now() - t0}ms | wrms=${result.wrms?.toFixed(4)} comfort=${result.comfort}`);
-      dispatchRef.current({
-        type: 'ADD_SEGMENT_RESULT',
-        payload: { ...result, lat: loc.lat, lon: loc.lon, speed: loc.speed },
-      });
-    } catch (e) {
-      warn('API', `✗ backend error: ${e?.message || e}. Fallback → client WRMS`);
-      // Fallback: tinh WRMS phia client
-      const wrms = calculateSegmentWRMS(samples);
-      const comfort = classifyComfort(wrms);
-      const color = getComfortColor(wrms);
-      log('WRMS', `client fallback: wrms=${wrms.toFixed(4)} comfort=${comfort}`);
-      dispatchRef.current({
-        type: 'ADD_SEGMENT_RESULT',
-        payload: { wrms, comfort, color, lat: loc.lat, lon: loc.lon, speed: loc.speed },
-      });
+  // Location thay doi cham (1 lan/giay)
+  useEffect(() => {
+    if (location && state.isRecording) {
+      locationRef.current = { ...location, receivedAt: Date.now() };
+      segmentSpeedsRef.current.push(location.speed);
+      dispatchRef.current({ type: 'UPDATE_LOCATION', payload: location });
     }
-  };
+  }, [location]);
 
   const startMeasurement = useCallback(() => {
     bufferRef.current = [];
+    sampleCountRef.current = 0;
+    segmentSpeedsRef.current = [];
     locationRef.current = null;
     gravityDiagnosedRef.current = false;
     lastFlushRef.current = Date.now();
@@ -140,13 +151,16 @@ export function useMeasurement() {
   }, [dispatch]);
 
   const stopMeasurement = useCallback(() => {
-    log('REC', `=== STOP recording === (buffer=${bufferRef.current.length} leftover samples)`);
-    if (bufferRef.current.length > 0) {
-      processSegment([...bufferRef.current], locationRef.current);
-      bufferRef.current = [];
+    const leftover = bufferRef.current;
+    log('REC', `=== STOP recording === (buffer=${leftover.length} leftover samples)`);
+    // Doan cuoi qua ngan thi bo: pho tan so thap khong dang tin
+    if (leftover.length >= MIN_SEGMENT_SAMPLES) {
+      processSegment(leftover, segmentSpeedsRef.current);
     }
+    bufferRef.current = [];
+    segmentSpeedsRef.current = [];
     dispatch({ type: 'STOP_RECORDING' });
-  }, [dispatch]);
+  }, [dispatch, processSegment]);
 
   return {
     isRecording: state.isRecording,
