@@ -78,6 +78,9 @@ export default {
     points: 'GPS POINTS',
     segments: 'SEGMENTS',
     avg: 'TOTAL WRMS',
+    offlineTitle: 'Map could not load',
+    offlineHint: 'Check your connection. Measuring, saving and exporting still work.',
+    simpleMode: 'Simple mode — device has no WebGL',
     legend: 'COMFORT SCALE (ISO 2631-1)',
   },
   charts: {

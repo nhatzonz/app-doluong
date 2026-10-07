@@ -2,6 +2,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import { translate } from '../../i18n/translate';
+import { LOGO_BASE64 } from './logoBase64';
 import { classifyComfort, getComfortColor } from '../../utils/comfortClassifier';
 import {
   COMFORT_CODES, COMFORT_THRESHOLDS, segmentAxis, worstSegments,
@@ -156,8 +157,16 @@ export function buildReportHtml(trip, mapImageBase64) {
     table{border-collapse:collapse;width:100%} td,th{border-bottom:1px solid #EEF0F4;padding:4px 6px;text-align:left}
     th{font-size:10px;color:#6B7280;text-transform:uppercase}
     .row{display:flex;gap:12px;align-items:flex-start} img{max-width:100%;border-radius:6px}
+    .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+    .brand img{width:44px;height:44px;border-radius:0}
+    .brand .name{font-size:15px;font-weight:800;letter-spacing:-0.2px}
+    .brand .tag{font-size:9px;color:#6B7280;letter-spacing:1px;text-transform:uppercase}
     .note{font-size:10px;color:#6B7280;margin-top:14px}
   </style></head><body>
+    <div class="brand">
+      <img src="data:image/png;base64,${LOGO_BASE64}"/>
+      <div><div class="name">SmartRoadSense</div><div class="tag">Safer roads · Smarter tomorrow</div></div>
+    </div>
     <h1>BÁO CÁO ĐO ĐỘ ÊM MẶT ĐƯỜNG</h1>
     <div>Tuyến: <b>${esc(name)}</b> &nbsp; Ngày: ${fmtDateTime(trip.startedAt, 'vi')}</div>
     <div class="muted">Phương tiện: ${setupLine}</div>

@@ -4,13 +4,16 @@
 // CHI LA GIAO DIEN — khong chua logic.
 
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SHADOW, comfortGradient } from '../../utils/colors';
 
+// Modal tren Android khong co safe-area → tu chua thanh trang thai
+const ANDROID_STATUS_BAR = Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0;
+
 export function ScreenHeader({ eyebrow, title, subtitle, onBack, onClose, right, modal }) {
   return (
-    <View style={[styles.header, modal && styles.headerModal]}>
+    <View style={[styles.header, modal && styles.headerModal, modal && { paddingTop: 22 + ANDROID_STATUS_BAR }]}>
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.backBtn} activeOpacity={0.7} hitSlop={8} accessibilityRole="button">
           <Text style={styles.backGlyph}>‹</Text>

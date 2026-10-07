@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Khoa ky APK — KHONG commit, nho sao luu rieng
+credentials/

@@ -1,12 +1,13 @@
 {
   "expo": {
-    "name": "Do Luong Mat Duong",
+    "name": "SmartRoadSense",
     "slug": "app-doluong",
     "scheme": "doluong",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "primaryColor": "#2E8BFF",
     "plugins": [
       [
         "expo-location",
@@ -27,15 +28,27 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.nhatzonz.doluong",
+      "buildNumber": "1",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "App can vi tri de do luong mat duong."
       }
     },
     "android": {
+      "package": "com.nhatzonz.doluong",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -43,6 +56,9 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "ACCESS_BACKGROUND_LOCATION"
       ]
     },
     "web": {

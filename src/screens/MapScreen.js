@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import MapView, { Polyline, Marker } from 'react-native-maps';
+import { WebMapView } from '../features/ui/WebMapView';
 import { useMeasurementContext } from '../context/MeasurementContext';
 import { COLORS, SHADOW, comfortSoloColor } from '../utils/colors';
 import { energyAverageWRMS } from '../services/wrmsCalculator';
@@ -29,44 +29,29 @@ export default function MapScreen() {
     ? routeCoords[routeCoords.length - 1]
     : { latitude: 16.46, longitude: 107.59 };
 
+  const lastFix = locationHistory[locationHistory.length - 1];
+  const currentFix = lastFix && Number.isFinite(lastFix.lat) ? { lat: lastFix.lat, lon: lastFix.lon } : null;
+
   const totalPts = routeCoords.length;
   const totalSegs = segmentResults.length;
   const avg = energyAverageWRMS(segmentResults);
 
   return (
     <View style={styles.container}>
-      <MapView
+      <WebMapView
         style={styles.map}
-        region={{
-          ...center,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-        showsUserLocation
-      >
-        {routeCoords.length > 1 && (
-          <Polyline
-            coordinates={routeCoords}
-            strokeColor={COLORS.primary}
-            strokeWidth={4}
-          />
-        )}
-
-        {segmentResults.map((seg, i) => {
-          if (!seg.lat || !seg.lon) return null;
-          const color = seg.color || comfortSoloColor(seg.wrms);
-          return (
-            <Marker
-              key={i}
-              coordinate={{ latitude: seg.lat, longitude: seg.lon }}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-            >
-              <View style={[styles.segDot, { backgroundColor: color }]} />
-            </Marker>
-          );
-        })}
-      </MapView>
+        track={routeCoords}
+        points={segmentResults
+          .map((seg, i) => ({ index: i, lat: seg.lat, lon: seg.lon, color: seg.color || comfortSoloColor(seg.wrms) }))
+          .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon))}
+        user={currentFix}
+        region={center}
+        follow={isRecording}
+        fit={!isRecording}
+        zoomControl={false}
+        attributionPosition="top-right"
+        topInset={168}
+      />
 
       {/* Top floating status */}
       <View style={styles.topBar} pointerEvents="none">

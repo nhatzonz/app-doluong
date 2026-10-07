@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import MapView, { Polyline, Marker } from 'react-native-maps';
+import { WebMapView } from '../ui/WebMapView';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useT } from '../../i18n';
 import { useTripStore } from '../trips/TripStoreContext';
@@ -78,16 +78,20 @@ export default function TripDetailScreen() {
   const s = trip.summary;
   const openSegment = (index) => navigation.navigate('SegmentDetail', { id: trip.id, index });
 
-  // Cham vao polyline → mo segment gan diem cham nhat
-  const onLinePress = (line, e) => {
-    const c = e?.nativeEvent?.coordinate;
+  // Cham vao duong → mo segment gan diem cham nhat (logic giu nguyen)
+  const onMapPress = (lineIndex, coordinate) => {
+    const line = derived.lines[lineIndex];
+    if (!line) {
+      if (Number.isFinite(lineIndex)) openSegment(lineIndex); // truong hop cham vao cham tron
+      return;
+    }
     let best = line.firstIndex;
-    if (c) {
+    if (coordinate) {
       let bestD = Infinity;
       for (let i = line.firstIndex; i <= line.lastIndex; i++) {
         const seg = trip.segments[i];
         if (!Number.isFinite(seg.lat)) continue;
-        const d = haversineM(c.latitude, c.longitude, seg.lat, seg.lon);
+        const d = haversineM(coordinate.latitude, coordinate.longitude, seg.lat, seg.lon);
         if (d < bestD) { bestD = d; best = i; }
       }
     }
@@ -108,7 +112,7 @@ export default function TripDetailScreen() {
   const exportPdf = () => run('pdf', async () => {
     let snapshot = null;
     try {
-      snapshot = await mapRef.current?.takeSnapshot({ format: 'png', quality: 0.8, result: 'base64', width: 700, height: 320 });
+      snapshot = await mapRef.current?.snapshot();
     } catch {
       snapshot = null; // bao cao van xuat duoc, chi thieu anh ban do
     }
@@ -149,53 +153,22 @@ export default function TripDetailScreen() {
 
         {/* Ban do */}
         <View style={styles.mapWrap}>
-          {derived.region ? (
-            <MapView ref={mapRef} style={styles.map} initialRegion={derived.region}>
-              {derived.lines.length > 0
-                ? derived.lines.map((line, i) => (
-                  <Polyline
-                    key={`l${i}`}
-                    coordinates={line.coords}
-                    strokeColor={line.color}
-                    strokeWidth={6}
-                    tappable
-                    onPress={(e) => onLinePress(line, e)}
-                  />
-                ))
-                : derived.trackCoords.length > 1 && (
-                  <Polyline coordinates={derived.trackCoords} strokeColor={COLORS.textMuted} strokeWidth={3} />
-                )}
-              {derived.lines.length === 0 && trip.segments.map((seg, i) => (
-                Number.isFinite(seg.lat) ? (
-                  <Marker
-                    key={`s${i}`}
-                    coordinate={{ latitude: seg.lat, longitude: seg.lon }}
-                    anchor={{ x: 0.5, y: 0.5 }}
-                    tracksViewChanges={false}
-                    onPress={() => openSegment(i)}
-                  >
-                    <View style={[styles.segDot, { backgroundColor: seg.color || getComfortColor(seg.wrms) }]} />
-                  </Marker>
-                ) : null
-              ))}
-              {(trip.marks || []).map(m => (
-                Number.isFinite(m.lat) ? (
-                  <Marker
-                    key={m.id}
-                    coordinate={{ latitude: m.lat, longitude: m.lon }}
-                    title={t(`markLabel.${m.label}`)}
-                    tracksViewChanges={false}
-                  >
-                    <Text style={styles.markPin}>📍</Text>
-                  </Marker>
-                ) : null
-              ))}
-            </MapView>
-          ) : (
-            <View style={[styles.map, styles.mapEmpty]}>
-              <Text style={screenStyles.mutedText}>{t('common.noGps')}</Text>
-            </View>
-          )}
+          <WebMapView
+            ref={mapRef}
+            style={styles.map}
+            lines={derived.lines}
+            track={derived.lines.length === 0 ? derived.trackCoords : undefined}
+            points={derived.lines.length === 0
+              ? trip.segments
+                .map((seg, i) => ({ index: i, lat: seg.lat, lon: seg.lon, color: seg.color || getComfortColor(seg.wrms) }))
+                .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon))
+              : undefined}
+            marks={(trip.marks || [])
+              .filter(m => Number.isFinite(m.lat))
+              .map(m => ({ id: m.id, lat: m.lat, lon: m.lon, label: t(`markLabel.${m.label}`) }))}
+            region={derived.region}
+            onPressLine={onMapPress}
+          />
           {derived.lines.length > 0 && (
             <View style={styles.mapHint} pointerEvents="none">
               <Text style={styles.mapHintText}>{t('ui.trip.mapHint')}</Text>

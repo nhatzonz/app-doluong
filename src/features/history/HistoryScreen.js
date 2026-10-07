@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useT } from '../../i18n';
 import { useTripStore } from '../trips/TripStoreContext';
@@ -129,9 +129,7 @@ export default function HistoryScreen() {
 
         {index.length === 0 ? (
           <View style={styles.empty}>
-            <View style={styles.emptyIcon}>
-              <Text style={styles.emptyGlyph}>☰</Text>
-            </View>
+            <Image source={require('../../../assets/logo-mark.png')} style={styles.emptyLogo} resizeMode="contain" />
             <Text style={styles.emptyTitle}>{t('history.empty')}</Text>
             <Text style={styles.emptyHint}>{t('history.emptyHint', { n: minSegments, max: maxTrips })}</Text>
           </View>
@@ -284,16 +282,7 @@ const styles = StyleSheet.create({
     marginTop: 18,
     ...SHADOW.sm,
   },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  emptyGlyph: { fontSize: 24, color: COLORS.primary, fontWeight: '800' },
+  emptyLogo: { width: 92, height: 92, marginBottom: 12 },
   emptyTitle: { fontSize: 15, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
   emptyHint: { fontSize: 12, color: COLORS.textMuted, marginTop: 6, textAlign: 'center', lineHeight: 18 },
 });

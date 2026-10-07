@@ -77,6 +77,9 @@ export default {
     points: 'ĐIỂM GPS',
     segments: 'ĐOẠN',
     avg: 'WRMS TỔNG',
+    offlineTitle: 'Không tải được bản đồ',
+    offlineHint: 'Kiểm tra kết nối mạng. Việc đo, lưu chuyến và xuất dữ liệu vẫn chạy bình thường.',
+    simpleMode: 'Chế độ đơn giản — thiết bị không hỗ trợ WebGL',
     legend: 'THANG ĐỘ ÊM (ISO 2631-1)',
   },
   charts: {
